@@ -2,335 +2,258 @@ package wq
 
 import (
 	"html"
-	"sync"
-
-	"github.com/manvalls/wok"
 
 	"github.com/manvalls/wit"
 )
 
-// Head matches the document head
-var Head = S("head").First()
-
-// Body matches the document body
-var Body = S("body").First()
-
-// Title matches the document title
-var Title = S("head > title").First()
-
-// Command wraps a set of commands and wrappers
-type Command struct {
-	mux     sync.Mutex
-	delta   *wit.Delta
-	parent  *Command
-	command wit.Command
-	wrapper func(wit.Command) wit.Command
+// Node represents one or more HTML nodes
+type Node struct {
+	Send func(wit.Delta) // Send will be called as a result of this node's methods
 }
 
-// Delta returns the resolved delta
-func (command *Command) Delta() wit.Delta {
-	command.mux.Lock()
-	defer command.mux.Unlock()
-
-	if command.delta != nil {
-		return *command.delta
-	}
-
-	root := command
-	commands := []wit.Command{}
-
-	for command != nil {
-		if command.wrapper != nil {
-			commands = []wit.Command{command.wrapper(wit.List(commands...))}
-		} else {
-			commands = append(commands, command.command)
-		}
-
-		command = command.parent
-	}
-
-	delta := wit.List(commands...).Delta()
-	root.delta = &delta
-	return delta
-}
-
-// Procedure returns a procedure wrapping the resolved delta
-func (command *Command) Procedure() wok.Procedure {
-	return wok.Command(command).Procedure()
-}
-
-// Selector wraps a CSS selector
+// Selector encapsulates a CSS selector. Must be initialised by Node.S()
 type Selector struct {
 	selector wit.Selector
-	*Command
+	parent   Node
+	Node
 }
 
-// S builds a wrapper based on the provided selector
-func S(selector string) Selector {
-	s := wit.S(selector)
+// First returns a Node that applies deltas to the first matching element
+func (s Selector) First() Node {
+	return Node{func(delta wit.Delta) {
+		s.parent.Send(wit.First{
+			Selector: s.selector,
+			Delta:    delta,
+		})
+	}}
+}
+
+// S returns a Selector. Accepts either a string or a wit.Selector as parameter.
+func (n Node) S(selector interface{}) Selector {
+	var witSelector wit.Selector
+
+	switch s := selector.(type) {
+	case string:
+		witSelector = wit.S(s)
+	case wit.Selector:
+		witSelector = s
+	default:
+		witSelector = wit.S("*")
+	}
+
 	return Selector{
-		selector: s,
-		Command: &Command{
-			wrapper: func(command wit.Command) wit.Command {
-				return s.All(command)
+		selector: witSelector,
+		parent:   n,
+		Node: Node{
+			Send: func(delta wit.Delta) {
+				n.Send(wit.First{
+					Selector: witSelector,
+					Delta:    delta,
+				})
 			},
 		},
 	}
 }
 
-// First matches only the first element
-func (s Selector) First() *Command {
-	return &Command{
-		wrapper: func(command wit.Command) wit.Command {
-			return s.selector.One(command)
-		},
-	}
-}
-
-// Apply applies the given commands
-func (command *Command) Apply(commands ...wit.Command) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.List(commands...),
-	}
-}
-
-// Root matches the root element
-func (command *Command) Root() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.Root(command)
-		},
-	}
+// Root matches the root node
+func (n Node) Root() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.Root{
+			Delta: delta,
+		})
+	}}
 }
 
 // Parent matches the parents of matched elements
-func (command *Command) Parent() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.Parent(command)
-		},
-	}
+func (n Node) Parent() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.Root{
+			Delta: delta,
+		})
+	}}
 }
 
 // FirstChild matches the first child of matched elements
-func (command *Command) FirstChild() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.FirstChild(command)
-		},
-	}
+func (n Node) FirstChild() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.FirstChild{
+			Delta: delta,
+		})
+	}}
 }
 
 // LastChild matches the last child of matched elements
-func (command *Command) LastChild() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.LastChild(command)
-		},
-	}
+func (n Node) LastChild() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.LastChild{
+			Delta: delta,
+		})
+	}}
 }
 
 // PrevSibling matches the previous sibling of matched elements
-func (command *Command) PrevSibling() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.PrevSibling(command)
-		},
-	}
+func (n Node) PrevSibling() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.PrevSibling{
+			Delta: delta,
+		})
+	}}
 }
 
-// NextSibling matches the next sibling of matched elements
-func (command *Command) NextSibling() *Command {
-	return &Command{
-		parent: command,
-		wrapper: func(command wit.Command) wit.Command {
-			return wit.NextSibling(command)
-		},
-	}
+// NextSibling matches the previous sibling of matched elements
+func (n Node) NextSibling() Node {
+	return Node{func(delta wit.Delta) {
+		n.Send(wit.NextSibling{
+			Delta: delta,
+		})
+	}}
 }
 
 // Remove removes matched elements
-func (command *Command) Remove() *Command {
-	return &Command{
-		parent:  command,
-		command: wit.Remove,
-	}
+func (n Node) Remove() Node {
+	n.Send(wit.Remove{})
+	return n
 }
 
 // Clear empties matched elements
-func (command *Command) Clear() *Command {
-	return &Command{
-		parent:  command,
-		command: wit.Clear,
+func (n Node) Clear() Node {
+	n.Send(wit.Clear{})
+	return n
+}
+
+// Text sets the text content of matched elements
+func (n Node) Text(text string) Node {
+	n.Send(wit.HTML{
+		HTMLSource: wit.HTMLFromString(html.EscapeString(text)),
+	})
+
+	return n
+}
+
+func getHTMLSource(html interface{}) wit.HTMLSource {
+	switch h := html.(type) {
+	case string:
+		return wit.HTMLFromString(h)
+	case wit.HTMLSource:
+		return h
+	default:
+		return wit.HTMLFromString("")
 	}
 }
 
-// Set sets the contents of matched elements
-func (command *Command) Set(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.HTML(factory),
-	}
+// HTML sets the inner HTML of matched elements. Accepts either a string or an HTMLSource as argument.
+func (n Node) HTML(html interface{}) Node {
+	n.Send(wit.HTML{
+		HTMLSource: getHTMLSource(html),
+	})
+
+	return n
 }
 
-// SetText sets the text content of matched elements
-func (command *Command) SetText(text string) *Command {
-	return command.Set(wit.FromString(html.EscapeString(text)))
-}
+// Replace replaces matching elements with the provided HTML
+func (n Node) Replace(html interface{}) Node {
+	n.Send(wit.Replace{
+		HTMLSource: getHTMLSource(html),
+	})
 
-// SetHTML sets the HTML content of matched elements
-func (command *Command) SetHTML(text string) *Command {
-	return command.Set(wit.FromString(text))
-}
-
-// Replace replaces matching elements
-func (command *Command) Replace(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.Replace(factory),
-	}
-}
-
-// ReplaceText replaces matching elements with the provided text
-func (command *Command) ReplaceText(text string) *Command {
-	return command.Replace(wit.FromString(html.EscapeString(text)))
-}
-
-// ReplaceHTML replaces matching elements with the provided HTML
-func (command *Command) ReplaceHTML(text string) *Command {
-	return command.Replace(wit.FromString(text))
+	return n
 }
 
 // Append appends content to matched elements
-func (command *Command) Append(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.Append(factory),
-	}
-}
+func (n Node) Append(html interface{}) Node {
+	n.Send(wit.Append{
+		HTMLSource: getHTMLSource(html),
+	})
 
-// AppendText appends text to elements
-func (command *Command) AppendText(text string) *Command {
-	return command.Append(wit.FromString(html.EscapeString(text)))
-}
-
-// AppendHTML appends HTML to matched elements
-func (command *Command) AppendHTML(text string) *Command {
-	return command.Append(wit.FromString(text))
+	return n
 }
 
 // Prepend prepends content to matched elements
-func (command *Command) Prepend(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.Prepend(factory),
-	}
-}
+func (n Node) Prepend(html interface{}) Node {
+	n.Send(wit.Prepend{
+		HTMLSource: getHTMLSource(html),
+	})
 
-// PrependText prepends text to elements
-func (command *Command) PrependText(text string) *Command {
-	return command.Prepend(wit.FromString(html.EscapeString(text)))
-}
-
-// PrependHTML prepends HTML to matched elements
-func (command *Command) PrependHTML(text string) *Command {
-	return command.Prepend(wit.FromString(text))
+	return n
 }
 
 // InsertAfter inserts content after matched elements
-func (command *Command) InsertAfter(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.InsertAfter(factory),
-	}
-}
+func (n Node) InsertAfter(html interface{}) Node {
+	n.Send(wit.InsertAfter{
+		HTMLSource: getHTMLSource(html),
+	})
 
-// InsertTextAfter inserts text after elements
-func (command *Command) InsertTextAfter(text string) *Command {
-	return command.InsertAfter(wit.FromString(html.EscapeString(text)))
-}
-
-// InsertHTMLAfter inserts HTML after matched elements
-func (command *Command) InsertHTMLAfter(text string) *Command {
-	return command.InsertAfter(wit.FromString(text))
+	return n
 }
 
 // InsertBefore inserts content before matched elements
-func (command *Command) InsertBefore(factory wit.Factory) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.InsertBefore(factory),
-	}
+func (n Node) InsertBefore(html interface{}) Node {
+	n.Send(wit.InsertBefore{
+		HTMLSource: getHTMLSource(html),
+	})
+
+	return n
 }
 
-// InsertTextBefore inserts text before elements
-func (command *Command) InsertTextBefore(text string) *Command {
-	return command.InsertBefore(wit.FromString(html.EscapeString(text)))
+// SetAttr sets the attributes of matching elements
+func (n Node) SetAttr(attr map[string]string) Node {
+	n.Send(wit.SetAttr{
+		Attributes: attr,
+	})
+
+	return n
 }
 
-// InsertHTMLBefore inserts HTML before matched elements
-func (command *Command) InsertHTMLBefore(text string) *Command {
-	return command.InsertBefore(wit.FromString(text))
+// ReplaceAttr replaces the attributes of matching elements
+func (n Node) ReplaceAttr(attr map[string]string) Node {
+	n.Send(wit.ReplaceAttr{
+		Attributes: attr,
+	})
+
+	return n
 }
 
-// AddAttr adds the provided attributes to the matching elements
-func (command *Command) AddAttr(attr map[string]string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.AddAttr(attr),
-	}
+// RmAttr removes the provided attributes from matching elements
+func (n Node) RmAttr(attrs ...string) Node {
+	n.Send(wit.RmAttr{
+		Attributes: attrs,
+	})
+
+	return n
 }
 
-// SetAttr sets the attributes of the matching elements
-func (command *Command) SetAttr(attr map[string]string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.SetAttr(attr),
-	}
+// SetStyles sets the styles of matching elements
+func (n Node) SetStyles(styles map[string]string) Node {
+	n.Send(wit.SetStyles{
+		Styles: styles,
+	})
+
+	return n
 }
 
-// RmAttr removes the provided attributes from the matching elements
-func (command *Command) RmAttr(attrs ...string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.RmAttr(attrs...),
-	}
+// RmStyles removes the provided styles from matching elements
+func (n Node) RmStyles(styles ...string) Node {
+	n.Send(wit.RmStyles{
+		Styles: styles,
+	})
+
+	return n
 }
 
-// AddStyles adds the provided styles to the matching elements
-func (command *Command) AddStyles(styles map[string]string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.AddStyles(styles),
-	}
+// AddClass adds the provided class to matching elements
+func (n Node) AddClass(class string) Node {
+	n.Send(wit.AddClasses{
+		Classes: class,
+	})
+
+	return n
 }
 
-// RmStyles removes the provided styles from the matching elements
-func (command *Command) RmStyles(styles ...string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.RmStyles(styles...),
-	}
-}
+// RmClass removes the provided class from matching elements
+func (n Node) RmClass(class string) Node {
+	n.Send(wit.RmClasses{
+		Classes: class,
+	})
 
-// AddClass adds the provided class to the matching elements
-func (command *Command) AddClass(class string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.AddClass(class),
-	}
-}
-
-// RmClass removes the provided class from the matching elements
-func (command *Command) RmClass(class string) *Command {
-	return &Command{
-		parent:  command,
-		command: wit.RmClass(class),
-	}
+	return n
 }
