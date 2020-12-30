@@ -1,7 +1,5 @@
 github.com/andybalholm/cascadia v1.2.0 h1:vuRCkM5Ozh/BfmsaTm26kbjm0mIOM3yS5Ek/F5h18aE=
 github.com/andybalholm/cascadia v1.2.0/go.mod h1:YCyR8vOZT9aZ1CHEd8ap0gMVm2aFgxBp0T0eFw1RUQY=
-github.com/manvalls/wit v0.0.0-20201229223357-6b3d90ed4d35 h1:JzGdGlV5ibFseLRIBP6Np/eRtXO45viBNZS+iQKUr3o=
-github.com/manvalls/wit v0.0.0-20201229223357-6b3d90ed4d35/go.mod h1:uh7q14RdIPFVARNmEzatuMXRFahXZU6garFvS2P0itQ=
 github.com/manvalls/wit v0.0.0-20201230125249-1acad31de893 h1:O89upcWh4Ap7EriZn9jPiBaDKyMLtup0CbPGWXkaMLo=
 github.com/manvalls/wit v0.0.0-20201230125249-1acad31de893/go.mod h1:B585FHXhI43CxTH2a2tBEagkaqJUJYXw/NZQTc0KvP0=
 golang.org/x/net v0.0.0-20180218175443-cbe0f9307d01/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
