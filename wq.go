@@ -2,6 +2,7 @@ package wq
 
 import (
 	"html"
+	"sync"
 
 	"github.com/manvalls/wit"
 )
@@ -15,6 +16,12 @@ type Node struct {
 type Selector struct {
 	selector wit.Selector
 	parent   Node
+	Node
+}
+
+// Tx represents a transaction
+type Tx struct {
+	Commit func()
 	Node
 }
 
@@ -256,4 +263,28 @@ func (n Node) RmClass(class string) Node {
 	})
 
 	return n
+}
+
+// Tx starts a transaction against the current node
+func (n Node) Tx() Tx {
+	mux := &sync.Mutex{}
+	deltas := []wit.Delta{}
+
+	return Tx{
+		Commit: func() {
+			mux.Lock()
+			defer mux.Unlock()
+
+			n.Send(wit.NextSibling{
+				Delta: wit.List{Deltas: deltas},
+			})
+
+			deltas = []wit.Delta{}
+		},
+		Node: Node{func(delta wit.Delta) {
+			mux.Lock()
+			defer mux.Unlock()
+			deltas = append(deltas, delta)
+		}},
+	}
 }
